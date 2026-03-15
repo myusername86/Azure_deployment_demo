@@ -2,7 +2,7 @@ import React from 'react';
 import { Button } from '@mui/material';
 
 /**
- * Reusable PrimaryButton component
+ 
  * @param {string} text - Button text
  * @param {function} onClick - Click handler function
  * @param {string} type - Button type (button, submit, reset)
