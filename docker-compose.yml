@@ -1,0 +1,10 @@
+services:
+  login-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "80:80"
+    environment:
+      - NODE_ENV=production
+    restart: always
