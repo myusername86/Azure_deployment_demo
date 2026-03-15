@@ -2,7 +2,7 @@ import React from 'react';
 import { TextField } from '@mui/material';
 
 /**
- * Reusable InputField component
+ 
  * @param {string} label - Label for the input field
  * @param {string} name - Name attribute for the input
  * @param {string} type - Input type (text, password, email, etc.)
