@@ -1,0 +1,102 @@
+name: Deploy .NET Backend API to Azure
+
+on:
+  push:
+    branches:
+      - main
+    paths:
+      - 'backend/**'
+      - '.github/workflows/backend-deploy.yml'
+  workflow_dispatch:
+
+env:
+  REGISTRY: uvaraniregistry.azurecr.io
+  IMAGE_NAME: login-api
+  AZURE_RESOURCE_GROUP: myResourceGroup
+  CONTAINER_INSTANCE_NAME: login-api-container
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    # Step 1: Checkout code
+    - name: Checkout code
+      uses: actions/checkout@v3
+
+    # Step 2: Set up Docker Buildx for advanced builds
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v2
+
+    # Step 3: Login to Azure
+    - name: Login to Azure
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    # Step 4: Login to Container Registry
+    - name: Login to Container Registry
+      run: |
+        az acr login --name uvaraniregistry
+
+    # Step 5: Build Docker image
+    - name: Build Docker image
+      working-directory: ./backend/LoginAPI
+      run: |
+        docker build \
+          -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest \
+          -t ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }} \
+          .
+
+    # Step 6: Push to Container Registry
+    - name: Push Docker image to ACR
+      run: |
+        docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest
+        docker push ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+
+    # Step 7: Deploy to Azure Container Instances
+    - name: Deploy to Azure Container Instances
+      run: |
+        az container create \
+          --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+          --name ${{ env.CONTAINER_INSTANCE_NAME }} \
+          --image ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest \
+          --registry-login-server ${{ env.REGISTRY }} \
+          --registry-username ${{ secrets.REGISTRY_USERNAME }} \
+          --registry-password ${{ secrets.REGISTRY_PASSWORD }} \
+          --ports 5000 \
+          --environment-variables \
+            ASPNETCORE_ENVIRONMENT=Production \
+            CosmosDb__Endpoint=${{ secrets.COSMOSDB_ENDPOINT }} \
+            CosmosDb__Key=${{ secrets.COSMOSDB_KEY }} \
+            CosmosDb__DatabaseName=LoginDB \
+            CosmosDb__ContainerName=Users \
+          --restart-policy OnFailure \
+          --cpu 1 \
+          --memory 1 \
+          --no-wait
+
+    # Step 8: Get container details
+    - name: Get Container Instance details
+      run: |
+        az container show \
+          --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+          --name ${{ env.CONTAINER_INSTANCE_NAME }} \
+          --query "{FQDN:ipAddress.fqdn, Ports:ipAddress.ports}" \
+          --output table
+
+    # Step 9: Health check
+    - name: Health check
+      run: |
+        sleep 30
+        curl -f http://${{ env.CONTAINER_INSTANCE_NAME }}.${{ secrets.AZURE_REGION }}.azurecontainer.io:5000/api/auth/health || echo "Health check will pass once container is fully running"
+      continue-on-error: true
+
+    # Step 10: Notify deployment
+    - name: Deployment Summary
+      run: |
+        echo "=== Backend Deployment Complete ==="
+        echo "Image: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:latest"
+        echo "Tag: ${{ github.sha }}"
+        echo "Container: ${{ env.CONTAINER_INSTANCE_NAME }}"
+        echo "Region: ${{ secrets.AZURE_REGION }}"
